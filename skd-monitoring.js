@@ -5,8 +5,8 @@ const { chromium } = require("playwright");
 // Ganti dengan kredensial login Anda ke website SKD asli
 const loginUrl = "https://skd.bps.go.id/SKD2025/web/site/loginsso"; 
 const monitoringUrl = "https://skd.bps.go.id/SKD2025/web/entri/responden/index";
-const username = "renata.delarosa"; // Ganti dengan username SSO Anda
-const password = "IPDSPinrang2025"; // Ganti dengan password SSO Anda
+const username = ""; // Ganti dengan username SSO Anda
+const password = ""; // Ganti dengan password SSO Anda
 // ====================================================================
 
 (async () => {
