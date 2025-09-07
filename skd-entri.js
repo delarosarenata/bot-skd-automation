@@ -19,9 +19,21 @@ const entriUrl = "https://skd.bps.go.id/SKD2025/web/entri/responden/blok1?token=
 (async () => {
     const conn = await mysql.createConnection(dbConfig);
 
+    const respondentId = process.argv[2]; 
+
+    if (!respondentId) {
+        console.error("❌ Error: ID Responden tidak diberikan oleh Laravel.");
+        process.exit(1);
+    }
+
+    // const [rows] = await conn.execute(
+    //     "SELECT * FROM respondents WHERE status IN ('pending', 'gagal') ORDER BY id ASC LIMIT 1"
+    // );
+
     const [rows] = await conn.execute(
-    "SELECT * FROM respondents WHERE status IN ('pending', 'gagal') ORDER BY id ASC LIMIT 1"
-);
+        "SELECT * FROM respondents WHERE id = ?", 
+        [respondentId]
+    );
 
     if (rows.length === 0) {
         console.log("✅ Tidak ada data baru untuk dientri.");
