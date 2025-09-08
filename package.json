@@ -8,11 +8,11 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
   "devDependencies": {
     "playwright": "^1.55.0"
   },
   "dependencies": {
-    "mysql2": "^3.14.3"
-  }
+    "mysql2": "^3.14.4"
+  },
+  "description": ""
 }

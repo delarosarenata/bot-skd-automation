@@ -2,6 +2,11 @@
 const { chromium } = require("playwright");
 const mysql = require("mysql2/promise");
 
+const argJson = process.argv[2]; // JSON dari watcher (kalau ada)
+let data = null;
+let fromJson = false;
+
+
 // ============================ PENGATURAN ============================
 const dbConfig = {
     host: "127.0.0.1",
@@ -15,36 +20,89 @@ const dbConfig = {
 const entriUrl = "https://skd.bps.go.id/SKD2025/web/entri/responden/blok1?token=2jUMky70QC3wjY06Xim6ueswQJQrVQ466d_HVKW7yuOGU2FOZpuDjes9P2uPKj1L9slA4H6wIVvF6S9zLmbjFn8XX0VThjkCHnen";
 // ====================================================================
 
+// ==== PARSER AMAN UNTUK STRING/JSON ====
+function toArray(x) {
+  if (Array.isArray(x)) return x;
+  if (x == null) return [];
+  if (typeof x === 'string') {
+    const t = x.trim();
+    if (!t) return [];
+    // Jika string terlihat seperti JSON array
+    if (t.startsWith('[') && t.endsWith(']')) {
+      try { return JSON.parse(t); } catch { return [t]; }
+    }
+    // Jika dipisah koma/titik koma
+    if (t.includes(',') || t.includes(';')) {
+      return t.split(/[;,]/).map(s => s.trim()).filter(Boolean);
+    }
+    // Satu nilai biasa
+    return [t];
+  }
+  // Objek/tipe lain -> kembalikan kosong
+  return [];
+}
+
+function parseJSON(x, fallback) {
+  if (x == null) return fallback;
+  if (typeof x === 'object') return x; // sudah objek
+  if (typeof x === 'string') {
+    try { return JSON.parse(x); } catch { return fallback; }
+  }
+  return fallback;
+}
+
 
 (async () => {
-    const conn = await mysql.createConnection(dbConfig);
+    // const conn = await mysql.createConnection(dbConfig);
 
-    const respondentId = process.argv[2]; 
+    // const respondentId = process.argv[2]; 
 
-    if (!respondentId) {
-        console.error("❌ Error: ID Responden tidak diberikan oleh Laravel.");
-        process.exit(1);
-    }
+    // if (!respondentId) {
+    //     console.error("❌ Error: ID Responden tidak diberikan oleh Laravel.");
+    //     process.exit(1);
+    // }
+
+    // // const [rows] = await conn.execute(
+    // //     "SELECT * FROM respondents WHERE status IN ('pending', 'gagal') ORDER BY id ASC LIMIT 1"
+    // // );
 
     // const [rows] = await conn.execute(
-    //     "SELECT * FROM respondents WHERE status IN ('pending', 'gagal') ORDER BY id ASC LIMIT 1"
+    //     "SELECT * FROM respondents WHERE id = ?", 
+    //     [respondentId]
     // );
 
+    // if (rows.length === 0) {
+    //     console.log("✅ Tidak ada data baru untuk dientri.");
+    //     await conn.end();
+    //     process.exit(0);
+    // }
+    // const data = rows[0];
+
+    let conn = null;
+    if (argJson) {
+    fromJson = true;
+    data = JSON.parse(argJson);
+    console.log(`📦 Data masuk via JSON untuk ID: ${data.id}`);
+    } else {
+    conn = await mysql.createConnection(dbConfig);
     const [rows] = await conn.execute(
-        "SELECT * FROM respondents WHERE id = ?", 
-        [respondentId]
+        "SELECT * FROM respondents WHERE status IN ('pending', 'gagal') ORDER BY id ASC LIMIT 1"
     );
 
     if (rows.length === 0) {
         console.log("✅ Tidak ada data baru untuk dientri.");
-        await conn.end();
+        if (conn) await conn.end();
         process.exit(0);
     }
-    const data = rows[0];
+    data = rows[0];
+    }
+
     console.log(`🚀 Mencoba mengentri data untuk ID: ${data.id} - ${data.nama}`);
 
     const browser = await chromium.launch({ headless: false, slowMo: 200 });
     const page = await browser.newPage();
+
+    let exitCode = 1; // default gagal, akan jadi 0 kalau sukses
 
     try {
         console.log("Membuka halaman entri SKD...");
@@ -100,7 +158,9 @@ const entriUrl = "https://skd.bps.go.id/SKD2025/web/entri/responden/blok1?token=
         // Checkbox Jenis Layanan (KLIK LABELNYA)
         if (data.jenis_layanan) {
             const layananMap = { "Perpustakaan": "i2", "Konsultasi Statistik": "i6", "Rekomendasi Kegiatan": "i7" };
-            for (const layananText of JSON.parse(data.jenis_layanan)) {
+            // for (const layananText of JSON.parse(data.jenis_layanan)) {
+            for (const layananText of toArray(data.jenis_layanan)) {
+
                 const labelFor = layananMap[layananText];
                 if (labelFor) {
                     await page.locator(`label[for="${labelFor}"]`).click();
@@ -118,7 +178,9 @@ const entriUrl = "https://skd.bps.go.id/SKD2025/web/entri/responden/blok1?token=
                 "Aplikasi Chat": "i12", 
                 "Lainnya": "i13" 
             };
-            for (const saranaText of JSON.parse(data.sarana_digunakan)) {
+            // for (const saranaText of JSON.parse(data.sarana_digunakan)) {
+            for (const saranaText of toArray(data.sarana_digunakan)) {
+
                 const labelFor = saranaMap[saranaText];
                 if (labelFor) {
                     await page.locator(`label[for="${labelFor}"]`).click();
@@ -126,7 +188,9 @@ const entriUrl = "https://skd.bps.go.id/SKD2025/web/entri/responden/blok1?token=
             }
         }
 
-        if (data.sarana_digunakan && JSON.parse(data.sarana_digunakan).includes('Lainnya') && data.sarana_lainnya) {
+        // if (data.sarana_digunakan && JSON.parse(data.sarana_digunakan).includes('Lainnya') && data.sarana_lainnya) {
+        if (toArray(data.sarana_digunakan).includes('Lainnya') && data.sarana_lainnya) {
+
             console.log("Mengisi input Sarana Lainnya...");
             // Gunakan selektor 'id' dari hasil inspect element Anda sebelumnya
             await page.fill('#verblok1fasilitaskunjungan-blok1_r_fkl', data.sarana_lainnya);
@@ -149,13 +213,17 @@ const entriUrl = "https://skd.bps.go.id/SKD2025/web/entri/responden/blok1?token=
 
         console.log("📝 Mengisi Blok II: Penilaian Pelayanan...");
         if (data.penilaian) {
-            const penilaianData = JSON.parse(data.penilaian);
+            // const penilaianData = JSON.parse(data.penilaian);
+            const penilaianData = parseJSON(data.penilaian, {});
+
 
             // ==================================================================
             // [LOGIKA BARU] Menangani Dropdown Rincian 8 secara kondisional
             // ==================================================================
             if (data.sarana_digunakan) {
-                const saranaArray = JSON.parse(data.sarana_digunakan);
+                // const saranaArray = JSON.parse(data.sarana_digunakan);
+                const saranaArray = toArray(data.sarana_digunakan);
+
                 
                 // HANYA jalankan jika sarana yang dipilih LEBIH DARI SATU
                 if (saranaArray.length > 1) { 
@@ -216,7 +284,9 @@ const entriUrl = "https://skd.bps.go.id/SKD2025/web/entri/responden/blok1?token=
 
         let skipBlok3 = false;
         if (data.jenis_layanan) {
-            const jenisLayanan = JSON.parse(data.jenis_layanan);
+            // const jenisLayanan = JSON.parse(data.jenis_layanan);
+            const jenisLayanan = toArray(data.jenis_layanan);
+
             // Cek jika HANYA ada 1 layanan dan itu adalah "Rekomendasi Kegiatan Statistik"
             if (jenisLayanan.length === 1 && jenisLayanan[0] === 'Rekomendasi Kegiatan') {
                 skipBlok3 = true;
@@ -242,7 +312,9 @@ const entriUrl = "https://skd.bps.go.id/SKD2025/web/entri/responden/blok1?token=
         console.log("📝 Mengisi Blok III: Kebutuhan Data...");
         
         if (data.kebutuhan_data) {
-            const kebutuhanDataArray = JSON.parse(data.kebutuhan_data);
+            // const kebutuhanDataArray = JSON.parse(data.kebutuhan_data);
+            const kebutuhanDataArray = parseJSON(data.kebutuhan_data, []);
+
             
             const levelDataMap = { "nasional": "1", "provinsi": "2", "kabupaten/kota": "3", "kecamatan": "4", "desa/kelurahan": "5", "individu": "6", "lainnya": "7" };
             const periodeDataMap = { "sepuluh tahunan": "11", "lima tahunan": "12", "tiga tahunan": "13", "tahunan": "14", "semesteran": "15", "triwulanan": "16", "bulanan": "17", "mingguan":"18", "harian": "19", "lainnya": "20" };
@@ -353,18 +425,29 @@ const entriUrl = "https://skd.bps.go.id/SKD2025/web/entri/responden/blok1?token=
         await page.waitForTimeout(5000); 
         console.log("🎉 Formulir berhasil di-submit!");
         // await page.pause();
+
+        console.log("✅ ENTRI SELESAI");
+        process.exit(0);
+
         
-        // Update status di database menjadi 'sukses'
-        await conn.execute("UPDATE respondents SET status = 'sukses' WHERE id = ?", [data.id]);
-        console.log(`✔️ Status untuk ID ${data.id} telah diupdate menjadi 'sukses'.`);
+        // // Update status di database menjadi 'sukses'
+        // await conn.execute("UPDATE respondents SET status = 'sukses' WHERE id = ?", [data.id]);
+        // console.log(`✔️ Status untuk ID ${data.id} telah diupdate menjadi 'sukses'.`);
 
     } catch (err) {
         console.error("❌ Gagal entri:", err);
         await page.screenshot({ path: 'screenshot_error.png' });
         await conn.execute("UPDATE respondents SET status = 'gagal' WHERE id = ?", [data.id]);
+        process.exit(1);
+
     } finally {
-        console.log("Menutup browser...");
-        await browser.close();
-        await conn.end();
+        // console.log("Menutup browser...");
+        // await browser.close();
+        // await conn.end();
+        try { if (context) await context.close(); } catch {}
+        try { if (browser) await browser.close(); } catch {}
+        if (conn) { try { await conn.end(); } catch {} }
+        process.exit(exitCode);  // ← Pindahkan exit ke sini
+
     }
 })();
